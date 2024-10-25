@@ -54,7 +54,7 @@ func NewEvmClient(clientURL string) (*EvmRepo, error) {
 
 func (evmClient EvmRepo) GetBlocks(startBlock int, endBlock int) ([]IBlock, error) {
 	blocks := make(chan *types.Block, endBlock-startBlock+1)
-	workers := make(chan bool, 200)
+	workers := make(chan bool, 50)
 	for i := startBlock; i < endBlock; i++ {
 		log.Println("Block", i)
 		wg.Add(1)
@@ -106,7 +106,7 @@ func (evmClient EvmRepo) fetchAllTransactions(blocks []IBlock) ([]ITransaction, 
 func (evmClient EvmRepo) GetReceiptFromTransactions(transactions TxData) []ITransaction {
 	response := []ITransaction{}
 	receipts := make(chan ITransaction, len(transactions.Transactions))
-	workers := make(chan bool, 50)
+	workers := make(chan bool, 5)
 
 	for _, transaction := range transactions.Transactions {
 		wg.Add(1)
