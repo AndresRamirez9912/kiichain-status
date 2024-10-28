@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,12 +19,28 @@ type EvmClient struct {
 }
 
 func NewEvmClient() (*EvmClient, error) {
+	// set the client to ignore the TLS certificate
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
+
 	// Get the current page in the backend
 	url := "https://kii.backend.kiivalidator.com/explorer/transactions"
-	resp, err := http.Get(url)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
+		log.Println("Error creating the request", err)
 		return nil, err
 	}
+
+	// Send Request
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Println("Error making the rest request", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
 
 	jsonData, err := io.ReadAll(resp.Body)
 	if err != nil {
