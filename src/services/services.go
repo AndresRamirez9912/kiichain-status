@@ -1,106 +1,77 @@
 package services
 
 import (
-	"crypto/tls"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"sync"
 	"walletCount/src/models"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type EvmClient struct {
-	client        http.Client
 	currentTxPage int
-	url           string
+	redisClient   *redis.Client
 }
 
 func NewEvmClient() (*EvmClient, error) {
-	// set the client to ignore the TLS certificate
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
+	// Create Redis client
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
+	})
 
-	// Get the current page in the backend
-	url := "https://kii.backend.kiivalidator.com/explorer/transactions"
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	// Ping Redis
+	_, err := redisClient.Ping(context.Background()).Result()
 	if err != nil {
-		log.Println("Error creating the request", err)
+		log.Fatal("Error connecting to the Redis server", err)
 		return nil, err
 	}
 
-	// Send Request
-	resp, err := client.Do(req)
+	data, err := redisClient.Get(context.Background(), "cachedPages").Result()
 	if err != nil {
-		log.Println("Error making the rest request", err)
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	jsonData, err := io.ReadAll(resp.Body)
-	if err != nil {
+		log.Println("Error getting the cached pages in redis", err.Error())
 		return nil, err
 	}
 
-	response := &models.TransactionsByPageResponse{}
-	err = json.Unmarshal(jsonData, response)
+	pages := []int{}
+	err = json.Unmarshal([]byte(data), &pages)
 	if err != nil {
+		log.Println("Error decrypting the cached pages in redis", err.Error())
 		return nil, err
 	}
 
 	return &EvmClient{
-		client:        http.Client{},
-		currentTxPage: response.Page,
-		url:           url,
+		currentTxPage: pages[len(pages)-1],
+		redisClient:   redisClient,
 	}, nil
 }
 
 func (evm *EvmClient) GetTxInPage(page int) ([]models.ITransaction, error) {
-	// Create Request
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/%d", evm.url, page), nil)
+	// Get the information per page
+	transactions := []models.ITransaction{}
+	value, err := evm.redisClient.Get(context.Background(), "transaction:"+fmt.Sprint(page)).Result()
 	if err != nil {
-		log.Println("Error creating the request", err)
 		return nil, err
 	}
 
-	// Send Request
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-	resp, err := client.Do(req)
+	err = json.Unmarshal([]byte(value), &transactions)
 	if err != nil {
-		log.Println("Error making the rest request", err)
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// Receive Response
-	jsonData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Println("Error getting the response data", err)
-		return nil, err
-	}
-
-	response := &models.TransactionsByPageResponse{}
-	err = json.Unmarshal(jsonData, response)
-	if err != nil {
-		log.Println("Error unmarshaling the received data", err)
+		log.Println("Error decoding the transactions in redis", err)
 		return nil, err
 	}
 
 	// Validate the received response
-	if response.Quantity == 0 {
+	if len(transactions) == 0 {
 		log.Println("Response information not valid")
 		return nil, errors.New("Response information not valid")
 	}
 
-	return response.Transactions, nil
+	return transactions, nil
 }
 
 func (evm *EvmClient) GetWalletAmount() (int, error) {
