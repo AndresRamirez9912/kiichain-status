@@ -69,7 +69,10 @@ func (evm *EvmClient) GetTxInPage(page int) ([]models.ITransaction, error) {
 	}
 
 	// Send Request
-	client := &http.Client{}
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{Transport: tr}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Println("Error making the rest request", err)
